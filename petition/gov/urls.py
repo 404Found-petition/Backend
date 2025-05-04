@@ -7,7 +7,8 @@ from .views import (
     wordcloud_data,
     wordcloud_months,
     wordcloud_data_tfidf,
-    check_duplicate
+    check_duplicate,
+    petition_field_stats
 )
 
 urlpatterns = [
@@ -19,4 +20,5 @@ urlpatterns = [
     path('wordcloud/', wordcloud_data),
     path('wordcloud/tfidf/', wordcloud_data_tfidf),
     path('wordcloud/months/', wordcloud_months),
+    path('petition-fields/', petition_field_stats, name='petition_fields'),
 ]

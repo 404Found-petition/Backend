@@ -13,7 +13,7 @@ from transformers import AutoTokenizer, AutoModel
 from .models import CustomUser, History
 from .serializers import CustomUserSerializer, LoginSerializer, HistorySerializer
 from wcdata.utils import extract_keywords_by_month, get_available_months
-
+from keywordAnalysis.fieldValue import get_field_counts
 
 # KoBERT 초기화
 tokenizer = AutoTokenizer.from_pretrained("monologg/kobert", trust_remote_code=True)
@@ -129,3 +129,12 @@ def wordcloud_months(request):
     except Exception as e:
         print("❌ 월 목록 가져오기 실패:", e)
         return Response({"error": "월 목록 조회 중 오류 발생"}, status=500)
+    
+@api_view(['GET'])
+def petition_field_stats(request):
+    try:
+        result = get_field_counts()
+        return Response(result, status=200)
+    except Exception as e:
+        print("❌ 분야 통계 처리 실패:", e)
+        return Response({"error": "서버 내부 오류"}, status=500)
