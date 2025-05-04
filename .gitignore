@@ -1,0 +1,6 @@
+*/*.csv
+wcdata/병합된_청원_데이터.csv
+*.pkl
+secrets.json
+
+
