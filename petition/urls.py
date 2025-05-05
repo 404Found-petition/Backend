@@ -16,8 +16,14 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
+from rest_framework.routers import DefaultRouter
+from lawmembers.views import LawmakerViewSet
+
+router = DefaultRouter()
+router.register(r'lawmembers', LawmakerViewSet)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include('petition.gov.urls')),  # 모든 API는 gov/urls.py에서 정의
+    path('api/', include(router.urls)),
 ]
