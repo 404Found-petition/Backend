@@ -77,3 +77,5 @@ try:
     print(f"✅ 예측 결과 저장 완료 → {output_path}")
 except Exception as e:
     print(f"❌ 예측 실패: {e}")
+
+

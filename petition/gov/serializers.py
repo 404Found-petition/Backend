@@ -43,8 +43,7 @@ class HistorySerializer(serializers.ModelSerializer):
 class PredictionResultSerializer(serializers.ModelSerializer):
     class Meta:
         model = PredictionResult
-        # 모든 필드를 직렬화하여 반환
-        fields = '__all__'
+        fields = ['id', 'petition_title', 'petition_content', 'prediction_percentage', 'predicted_at']
 
 # Vote 모델을 직렬화하는 클래스 (투표 기능)
 class VoteSerializer(serializers.ModelSerializer):
@@ -53,3 +52,44 @@ class VoteSerializer(serializers.ModelSerializer):
         # 모든 필드를 직렬화하여 반환
         fields = '__all__'
 
+# 회원 정보 수정용 Serializer
+class UserUpdateSerializer(serializers.ModelSerializer):
+    password_confirm = serializers.CharField(write_only=True, required=False)
+
+    class Meta:
+        model = CustomUser
+        fields = ['name', 'phone_num', 'password', 'password_confirm']
+        extra_kwargs = {
+            'password': {'write_only': True, 'required': False}
+        }
+
+    def validate(self, data):
+        password = data.get("password")
+        password_confirm = data.get("password_confirm")
+
+        if password and password != password_confirm:
+            raise serializers.ValidationError("비밀번호가 일치하지 않습니다.")
+        return data
+
+    def update(self, instance, validated_data):
+        instance.name = validated_data.get("name", instance.name)
+        instance.phone_num = validated_data.get("phone_num", instance.phone_num)
+        password = validated_data.get("password", None)
+
+        if password:
+            instance.set_password(password)
+        instance.save()
+        return instance
+
+
+# PostSerializer 추가 - POST 모델의 인스턴스를 JSON으로 직렬화해서 프론트에 보내줌줌
+class PostSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Post
+        fields = '__all__'
+
+# CommentSerializer 추가 - 댓글을 프론트로 응답하거나, 저장할 때 유효성 검사를 하려면 필요.
+class CommentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Comment
+        fields = '__all__'

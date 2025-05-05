@@ -13,6 +13,8 @@ from .views import (
     PredictionResultView,
     VoteView,
     PetitionListView,
+    PostPaginationView,
+    UserUpdateView,       
 )
 
 urlpatterns = [
@@ -27,5 +29,10 @@ urlpatterns = [
     path('wordcloud/months/', wordcloud_months),
     path('petition-fields/', petition_field_stats, name='petition_fields'),
     path('prediction-results/', PredictionResultView.as_view(), name='prediction_results'),
+    path('posts/', PostListView.as_view(), name='post_list'),
+    path('posts/create/', PostCreateView.as_view(), name='post_create'),
     path('vote/', VoteView.as_view(), name='vote'),
+    path('comments/<int:post_id>/', CommentCreateView.as_view(), name='comment_create'),
+    path('posts/page/', PostPaginationView.as_view(), name='post_pagination'),
+    path('update-user/', UserUpdateView.as_view(), name='update_user'),
 ]

@@ -10,10 +10,13 @@ import joblib
 import numpy as np
 import torch
 from transformers import AutoTokenizer, AutoModel
-from .models import CustomUser, History, PredictionResult
-from .serializers import CustomUserSerializer, LoginSerializer, HistorySerializer, PredictionResultSerializer
+from .models import CustomUser, History, PredictionResult, Post, Vote, Comment
+from .serializers import CustomUserSerializer, LoginSerializer, HistorySerializer, PredictionResultSerializer, UserUpdateSerializer, PostSerializer
 from wcdata.utils import extract_keywords_by_month, get_available_months
 from keywordAnalysis.fieldValue import get_field_counts
+from django.core.paginator import Paginator
+from django.shortcuts import redirect
+
 
 # KoBERT 모델 초기화
 tokenizer = AutoTokenizer.from_pretrained("monologg/kobert", trust_remote_code=True)
@@ -54,11 +57,17 @@ class DeleteUserView(APIView):
     permission_classes = [IsAuthenticated]
 
     def delete(self, request):
-        # 로그인된 사용자의 정보를 삭제
-        request.user.delete()
+        user = request.user
+
+        # 사용자가 작성한 게시글, 댓글, 예측 기록 등 삭제
+        user.posts.all().delete()  # 사용자가 작성한 게시글 삭제
+        user.comments.all().delete()  # 사용자가 작성한 댓글 삭제
+        user.history.all().delete()  # 사용자가 작성한 예측 기록 삭제
+        user.delete()  # 사용자 삭제
+
         return Response({
             "success": True,
-            "message": "회원 탈퇴 완료, 로그아웃 되었습니다."
+            "message": "회원 탈퇴 완료, 모든 정보와 콘텐츠가 삭제되었습니다."
         })
 
 # 로그인 뷰
@@ -69,19 +78,41 @@ class LoginView(APIView):
         if serializer.is_valid():
             user = serializer.validated_data['user']
             refresh = RefreshToken.for_user(user)
-            # 인증 성공 시 access token과 refresh token 반환
-            return Response({
-                "success": True,
-                "message": "로그인 성공",
-                "access": str(refresh.access_token),
-                "refresh": str(refresh)  
-            }, status=status.HTTP_200_OK)
+
+            # 로그인 후 메인 화면으로 리다이렉트
+            return redirect('home')  # 'home'은 메인 페이지의 URL 패턴명입니다.
+
         # 로그인 실패 시 오류 메시지 반환
         return Response({
             "success": False,
             "message": "아이디나 비밀번호가 올바르지 않습니다."
         }, status=status.HTTP_400_BAD_REQUEST)
 
+#로그아웃 뷰
+class LogoutView(APIView):
+    def post(self, request):
+        # 로그아웃 요청 처리
+        user = request.user
+        session_token = request.auth_token  # 사용자의 인증 토큰
+
+        # 토큰 삭제
+        request.user.auth_token.delete()
+
+        # 로그아웃 이벤트 기록 (예: 로그아웃 시간, 성공 여부)
+        logout_event = LogoutEvent(
+            user_id=user.id,
+            logout_time=datetime.now(),
+            successful=True  # 로그아웃이 성공적으로 처리됨
+        )
+        logout_event.save()  # 이벤트 저장 (로그 기록 등)
+
+        # 응답 반환
+        return Response({
+            "status": "success",
+            "message": "로그아웃 완료",
+            "session_token_removed": True  # 세션 토큰이 삭제되었음을 응답
+        }, status=status.HTTP_200_OK)
+        
 # 아이디, 닉네임 중복 체크 API
 @api_view(['GET'])
 def check_duplicate(request):
@@ -99,39 +130,84 @@ def check_duplicate(request):
 
     return Response({"success": True, "message": "사용 가능한 아이디입니다."})
 
+# 회원 정보 수정 뷰
+class UserUpdateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def put(self, request):
+        serializer = UserUpdateSerializer(request.user, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({
+                "success": True,
+                "message": "회원 정보 수정 완료"
+            }, status=200)
+        return Response({
+            "success": False,
+            "errors": serializer.errors
+        }, status=400)
+
+# 게시글 페이지네이션 뷰
+class PostPaginationView(APIView):
+    def get(self, request):
+        page = request.query_params.get("page", 1)
+        posts = Post.objects.all().order_by('-created_at')
+        paginator = Paginator(posts, 4)
+
+        try:
+            paginated = paginator.page(page)
+        except:
+            return Response({
+                "success": False,
+                "message": "존재하지 않는 페이지입니다."
+            }, status=404)
+
+        serializer = PostSerializer(paginated, many=True)
+        return Response({
+            "success": True,
+            "message": "게시글 조회 성공",
+            "data": serializer.data,
+            "page": int(page),
+            "total_pages": paginator.num_pages
+        })
+
 # 청원 예측을 수행하고 결과를 기록하는 API
 class PetitionPredictView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated]  # 로그인한 사용자만 예측 가능
 
     def post(self, request):
         petition_text = request.data.get('petition_text')
-        user = request.user  # 로그인한 사용자 정보
+        user = request.user
 
-        # 청원 내용이 없을 경우 오류 반환
         if not petition_text:
             return Response({"error": "청원 내용을 입력해주세요."}, status=400)
 
         try:
-            # 예측 모델과 스케일러 불러오기
-            BASE_DIR = pathlib.Path(__file__).resolve().parent.parent.parent
             model = joblib.load(BASE_DIR / 'AI' / '청원_예측모델.pkl')
             scaler = joblib.load(BASE_DIR / 'AI' / 'scaler.pkl')
 
-            # BERT 임베딩과 법안 여부 특징을 결합한 피처 생성
             embedding = get_bert_embedding(petition_text)
             is_law = 1 if "법안" in petition_text else 0
             features = np.hstack((embedding, is_law)).reshape(1, -1)
 
-            # 예측 수행
             pred_scaled = model.predict(features)
             pred_score = scaler.inverse_transform(pred_scaled.reshape(-1, 1))[0][0]
 
         except Exception as e:
-            print("❌ 모델 예측 실패:", e)
-            return Response({
-                "success": False,
-                "message": "AI 예측 중 오류 발생"
-            }, status=500)
+            return Response({"error": "AI 예측 중 오류 발생"}, status=500)
+
+        # 예측 결과를 History 모델에 저장
+        history = History.objects.create(
+            user=user,
+            search_petition=petition_text,
+            search_petition_percentage=pred_score
+        )
+
+        return Response({
+            "success": True,
+            "predicted_percentage": round(pred_score, 2),
+            "history_id": history.id
+        }, status=200)
 
         # 예측 결과를 History에 기록
         history = History.objects.create(
@@ -147,7 +223,7 @@ class PetitionPredictView(APIView):
             "history_id": history.id
         }, status=200)
 
-# 예측 기록 조회 API
+# 개인이 과거에 청원 예측 수행한 결과 기록 조회 API
 class MyHistoryView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -241,15 +317,17 @@ def petition_field_stats(request):
             "message": "서버 내부 오류"
         }, status=500)
 
-# 로그인한 사용자가 예측 결과를 조회하는 API
+# 로그인한 사용자가 예측 결과를 조회하는 API  --> 모든 사람이 다 볼 수 있게 변경
 class PredictionResultView(APIView):
     def get(self, request):
-        user = request.user
-        # 예측 결과 조회 (최신 10개만)
-        results = PredictionResult.objects.filter(user=user).order_by('-predicted_at')[:10]
+        results = PredictionResult.objects.all().order_by('-predicted_at')
         serializer = PredictionResultSerializer(results, many=True)
-        return Response(serializer.data)
-
+        return Response({
+            "success": True,
+            "message": "예측 결과 조회 성공",
+            "data": serializer.data
+        }, status=200)
+    
 # 모든 사용자가 조회할 수 있는 게시글 목록 API
 class PetitionListView(APIView):
     def get(self, request):
@@ -262,7 +340,28 @@ class PetitionListView(APIView):
             "data": serializer.data
         }, status=200)
         
-# 투표 기능 API
+# 게시글 작성 API
+class PostCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        title = request.data.get('title')
+        content = request.data.get('content')
+        has_poll = request.data.get('has_poll', False)
+
+        if not title or not content:
+            return Response({"error": "제목과 내용을 입력해야 합니다."}, status=400)
+
+        post = Post.objects.create(
+            user=request.user,
+            title=title,
+            content=content,
+            has_poll=has_poll
+        )
+
+        return Response({"success": True, "message": "게시글 작성 완료", "post": PostSerializer(post).data}, status=201)
+
+# 찬반 투표 API
 class VoteView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -271,33 +370,31 @@ class VoteView(APIView):
         choice = request.data.get('choice')  # 'yes' or 'no'
         user = request.user
 
-        # 유효한 선택지 확인
-        if choice not in ['yes', 'no']:
-            return Response(
-                {"success": False, "message": "선택지는 'yes' 또는 'no'만 가능합니다."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        try:
+            post = Post.objects.get(id=post_id)
+            if not post.has_poll:
+                return Response({"error": "이 게시글에는 투표 기능이 없습니다."}, status=400)
+        except Post.DoesNotExist:
+            return Response({"error": "게시글을 찾을 수 없습니다."}, status=404)
+
+        vote, created = Vote.objects.update_or_create(
+            post=post, user=user,
+            defaults={"choice": choice == 'yes'}
+        )
+
+        return Response({"success": True, "message": "투표 완료"}, status=200)
+
+# 댓글 작성 API
+class CommentCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, post_id):
+        content = request.data.get('content')
+
+        if not content:
+            return Response({"error": "댓글 내용을 입력해야 합니다."}, status=400)
 
         try:
             post = Post.objects.get(id=post_id)
         except Post.DoesNotExist:
-            return Response(
-                {"success": False, "message": "해당 게시글이 존재하지 않습니다."},
-                status=status.HTTP_404_NOT_FOUND
-            )
-
-        # 투표 결과 업데이트 (존재하지 않으면 새로 생성)
-        vote, created = Vote.objects.update_or_create(
-            post=post, user=user,
-            defaults={"choice": choice}
-        )
-
-        return Response(
-            {
-                "success": True,
-                "message": "투표가 완료되었습니다.",
-                "updated": not created
-            },
-            status=status.HTTP_200_OK
-        )
-
+            return Response({"error": "게시글을 찾을 수 없습니다."}, status=404)

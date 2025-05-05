@@ -60,42 +60,42 @@ class History(models.Model):
 
 # PredictionResult 모델 - 청원 예측 결과를 저장하는 모델
 class PredictionResult(models.Model):
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)  # 사용자와 연결
-    petition_title = models.CharField(max_length=300)  # 청원 제목
-    petition_content = models.TextField(null=True, blank=True)  # 청원 내용 (optional)
-    prediction_percentage = models.FloatField()  # 예측된 이행 확률
-    predicted_at = models.DateTimeField(auto_now_add=True)  # 예측이 이루어진 시간
+    petition_title = models.CharField(max_length=300)
+    petition_content = models.TextField(null=True, blank=True)
+    prediction_percentage = models.FloatField()
+    predicted_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"{self.petition_title} - {self.prediction_percentage:.2f}%"  # 청원 제목과 예측 확률을 반환
+        return f"{self.petition_title} - {self.prediction_percentage:.2f}%"
 
 # Vote 모델 - 사용자가 게시글에 대해 찬반 투표를 할 수 있는 모델
 class Vote(models.Model):
-    post = models.ForeignKey('Post', on_delete=models.CASCADE)  # 게시글과 연결
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)  # 사용자와 연결
-    choice = models.BooleanField()  # True=찬성, False=반대
-
+    post = models.ForeignKey('Post', on_delete=models.CASCADE)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    choice = models.BooleanField()
     class Meta:
-        unique_together = ('post', 'user')  # 하나의 게시글에 대해 중복된 투표를 방지
+        unique_together = ('post', 'user')
 
+        
 # Post 모델 - 게시글을 작성하는 모델
 class Post(models.Model):
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)  # 사용자와 연결
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)  # 사용자가 삭제되면 게시글도 삭제
     title = models.CharField(max_length=200)  # 게시글 제목
     content = models.TextField()  # 게시글 내용
-    created_at = models.DateTimeField(auto_now_add=True)  # 게시글 생성 시간
+    created_at = models.DateTimeField(auto_now_add=True)  # 게시글 작성 시간
     updated_at = models.DateTimeField(auto_now=True)  # 게시글 수정 시간
+    has_poll = models.BooleanField(default=False)  # 찬반투표 활성화 여부
 
     def __str__(self):
-        return self.title  # 게시글 제목을 반환
+        return self.title  # 게시글 제목 반환
 
 # Comment 모델 - 게시글에 대한 댓글을 작성하는 모델
 class Comment(models.Model):
-    post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name='comments')  # 게시글과 연결 (댓글들)
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)  # 사용자와 연결
-    content = models.TextField()  # 댓글 내용
-    created_at = models.DateTimeField(auto_now_add=True)  # 댓글 작성 시간
-    updated_at = models.DateTimeField(auto_now=True)  # 댓글 수정 시간
+    post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name='comments')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    content = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return f"댓글 by {self.user.nickname} on {self.post.title}"  # 댓글 작성자와 게시글 제목을 반환
