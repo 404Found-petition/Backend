@@ -3,6 +3,7 @@ import ast
 import os
 import django
 import re
+import csv
 from collections import defaultdict
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "petition.settings")
@@ -14,7 +15,6 @@ API_KEY = "DEMO-KEY"  # 실제 실행 시 발급받은 키로 변경
 AGE = 21
 PAGE_SIZE = 100
 
-# 대표분야 키워드 사전
 FIELD_KEYWORDS = {
     "정치·행정": ["정부", "행정", "정책", "의회", "지자체", "법안", "입법"],
     "사회": ["복지", "인권", "범죄", "노동", "주거", "청년", "아동", "노인", "여성", "장애"],
@@ -36,7 +36,6 @@ def determine_field(texts):
                 score[field] += len(re.findall(rf"\\b{re.escape(keyword)}\\b", text))
     return max(score.items(), key=lambda x: x[1])[0] if score else "정치·행정"
 
-# 의원 인적사항 API
 def fetch_lawmakers():
     url = "https://open.assembly.go.kr/portal/openapi/nwvrqwxyaytdsfvhu"
     result = {}
@@ -48,10 +47,10 @@ def fetch_lawmakers():
             break
         for row in pttrcp[1]['row']:
             name = row['INTD_ASBLM_NM'].split()[0].replace("의원", "")
-            result[name] = {"name": name, "bills": [], "petitions": []}
+            party = row.get('POLY_NM', '미상')
+            result[name] = {"name": name, "party": party, "bills": [], "petitions": []}
     return result
 
-# 법률안 수집
 def fetch_bills(lawmakers):
     url = "https://open.assembly.go.kr/portal/openapi/nzmimeepazxkubdpn"
     for page in range(1, 10):
@@ -66,7 +65,6 @@ def fetch_bills(lawmakers):
             if proposer in lawmakers:
                 lawmakers[proposer]['bills'].append(title)
 
-# 청원 수집
 def fetch_petitions(lawmakers):
     url = "https://open.assembly.go.kr/portal/openapi/nwvrqwxyaytdsfvhu"
     for page in range(1, 10):
@@ -83,21 +81,35 @@ def fetch_petitions(lawmakers):
                 if name in lawmakers:
                     lawmakers[name]['petitions'].append(title)
 
-# 실행
+# API 데이터 수집
 lawmakers = fetch_lawmakers()
 fetch_bills(lawmakers)
 fetch_petitions(lawmakers)
 
-for i, (name, data) in enumerate(lawmakers.items(), start=1):
-    texts = data['bills'] + data['petitions']
-    rep_field = determine_field(texts)
+# CSV 저장
+with open('api_lawmaker_data.csv', 'w', newline='', encoding='utf-8') as f:
+    writer = csv.writer(f)
+    writer.writerow(["이름", "정당", "대표분야", "법률안목록", "청원목록"])
+    for i, (name, data) in enumerate(lawmakers.items(), start=1):
+        texts = data['bills'] + data['petitions']
+        rep_field = determine_field(texts)
+        bills_joined = "; ".join(data['bills'])
+        petitions_joined = "; ".join(data['petitions'])
+        writer.writerow([name, data['party'], rep_field, bills_joined, petitions_joined])
 
-    lawmaker, _ = Lawmaker.objects.get_or_create(
-        name=name,
-        defaults={"seat_number": i, "party": "미상", "representative_field": rep_field}
-    )
-    lawmaker.representative_field = rep_field
-    lawmaker.save()
+# CSV 파일로부터 DB 삽입
+with open('api_lawmaker_data.csv', 'r', encoding='utf-8') as f:
+    reader = csv.DictReader(f)
+    for i, row in enumerate(reader, start=1):
+        lawmaker, _ = Lawmaker.objects.get_or_create(
+            name=row['이름'],
+            defaults={"seat_number": i, "party": row['정당'], "representative_field": row['대표분야']}
+        )
+        lawmaker.representative_field = row['대표분야']
+        lawmaker.party = row['정당']
+        lawmaker.seat_number = i
+        lawmaker.save()
 
-    for title in data['bills']:
-        Bill.objects.get_or_create(lawmaker=lawmaker, title=title)
+        for title in row['법률안목록'].split('; '):
+            if title:
+                Bill.objects.get_or_create(lawmaker=lawmaker, title=title)
