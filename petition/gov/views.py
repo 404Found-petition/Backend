@@ -10,12 +10,13 @@ import joblib
 import numpy as np
 import torch
 from transformers import AutoTokenizer, AutoModel
-from .models import CustomUser, History, PredictionResult, Post, Vote, Comment
-from .serializers import CustomUserSerializer, LoginSerializer, HistorySerializer, PredictionResultSerializer, UserUpdateSerializer, PostSerializer
-from wcdata.utils import extract_keywords_by_month, get_available_months
+from .models import CustomUser, History, PredictionResult, Post, Vote, Comment, Petition
+from .serializers import CustomUserSerializer, LoginSerializer, HistorySerializer, PredictionResultSerializer, UserUpdateSerializer, PostSerializer, CommentSerializer
+from wcdata.utils import extract_keywords_by_month, get_available_months, extract_keywords_by_month_tfidf
 from keywordAnalysis.fieldValue import get_field_counts
 from django.core.paginator import Paginator
 from django.shortcuts import redirect
+from django.conf import settings
 
 
 # KoBERT 모델 초기화
@@ -57,78 +58,80 @@ class DeleteUserView(APIView):
     permission_classes = [IsAuthenticated]
 
     def delete(self, request):
-        user = request.user
+        user = request.user  # 로그인된 사용자 정보
 
-        # 사용자가 작성한 게시글, 댓글, 예측 기록 등 삭제
-        user.posts.all().delete()  # 사용자가 작성한 게시글 삭제
-        user.comments.all().delete()  # 사용자가 작성한 댓글 삭제
-        user.history.all().delete()  # 사용자가 작성한 예측 기록 삭제
-        user.delete()  # 사용자 삭제
+        try:
+            # 사용자가 작성한 모든 게시글 삭제
+            user.posts.all().delete()  # 이제 user.posts가 정상적으로 작동함
+            user.comments.all().delete()
+            user.history.all().delete()
 
-        return Response({
-            "success": True,
-            "message": "회원 탈퇴 완료, 모든 정보와 콘텐츠가 삭제되었습니다."
-        })
+            # 사용자 삭제
+            user.delete()
+
+            return Response({
+                "success": True,
+                "message": "회원 탈퇴 완료"
+            }, status=status.HTTP_204_NO_CONTENT)
+
+        except Exception as e:
+            return Response({
+                "success": False,
+                "message": f"오류 발생: {str(e)}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 # 로그인 뷰
 class LoginView(APIView):
     def post(self, request):
-        # LoginSerializer를 사용하여 로그인 시도
         serializer = LoginSerializer(data=request.data)
         if serializer.is_valid():
             user = serializer.validated_data['user']
             refresh = RefreshToken.for_user(user)
 
-            # 로그인 후 메인 화면으로 리다이렉트
-            return redirect('home')  # 'home'은 메인 페이지의 URL 패턴명입니다.
+            return Response({
+                "success": True,
+                "message": "로그인 성공",
+                "access": str(refresh.access_token),
+                "refresh": str(refresh)
+            }, status=status.HTTP_200_OK)
 
-        # 로그인 실패 시 오류 메시지 반환
         return Response({
             "success": False,
             "message": "아이디나 비밀번호가 올바르지 않습니다."
         }, status=status.HTTP_400_BAD_REQUEST)
 
-#로그아웃 뷰
 class LogoutView(APIView):
+    permission_classes = [IsAuthenticated]
+
     def post(self, request):
-        # 로그아웃 요청 처리
-        user = request.user
-        session_token = request.auth_token  # 사용자의 인증 토큰
+        try:
+            refresh_token = request.data.get("refresh")
+            token = RefreshToken(refresh_token)
+            token.blacklist()  # ✅ Refresh Token 무효화 (블랙리스트에 등록)
 
-        # 토큰 삭제
-        request.user.auth_token.delete()
+            return Response({
+                "status": "success",
+                "message": "로그아웃 완료"
+            }, status=status.HTTP_205_RESET_CONTENT)
 
-        # 로그아웃 이벤트 기록 (예: 로그아웃 시간, 성공 여부)
-        logout_event = LogoutEvent(
-            user_id=user.id,
-            logout_time=datetime.now(),
-            successful=True  # 로그아웃이 성공적으로 처리됨
-        )
-        logout_event.save()  # 이벤트 저장 (로그 기록 등)
-
-        # 응답 반환
-        return Response({
-            "status": "success",
-            "message": "로그아웃 완료",
-            "session_token_removed": True  # 세션 토큰이 삭제되었음을 응답
-        }, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({
+                "status": "error",
+                "message": str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
         
-# 아이디, 닉네임 중복 체크 API
+# 아이디 중복 체크 API
 @api_view(['GET'])
 def check_duplicate(request):
-    # 쿼리 파라미터로 아이디와 닉네임 값을 받아옴
+    # 쿼리 파라미터로 아이디 값을 받아옴
     userid = request.query_params.get('userid')
-    nickname = request.query_params.get('nickname')
 
     # 아이디 중복 여부 확인
     if userid and CustomUser.objects.filter(userid=userid).exists():
         return Response({"success": False, "field": "userid", "message": "이미 사용 중인 아이디입니다."})
-    
-    # 닉네임 중복 여부 확인
-    if nickname and CustomUser.objects.filter(nickname=nickname).exists():
-        return Response({'field': 'nickname', 'available': False})
 
     return Response({"success": True, "message": "사용 가능한 아이디입니다."})
+
 
 # 회원 정보 수정 뷰
 class UserUpdateView(APIView):
@@ -183,8 +186,8 @@ class PetitionPredictView(APIView):
             return Response({"error": "청원 내용을 입력해주세요."}, status=400)
 
         try:
-            model = joblib.load(BASE_DIR / 'AI' / '청원_예측모델.pkl')
-            scaler = joblib.load(BASE_DIR / 'AI' / 'scaler.pkl')
+            model = joblib.load(settings.BASE_DIR / 'AI' / '청원_예측모델.pkl')
+            scaler = joblib.load(settings.BASE_DIR / 'AI' / 'scaler.pkl')
 
             embedding = get_bert_embedding(petition_text)
             is_law = 1 if "법안" in petition_text else 0
@@ -208,13 +211,6 @@ class PetitionPredictView(APIView):
             "predicted_percentage": round(pred_score, 2),
             "history_id": history.id
         }, status=200)
-
-        # 예측 결과를 History에 기록
-        history = History.objects.create(
-            user=user,
-            search_petition=petition_text,
-            search_petition_percentage=pred_score
-        )
 
         return Response({
             "success": True,
@@ -327,18 +323,30 @@ class PredictionResultView(APIView):
             "message": "예측 결과 조회 성공",
             "data": serializer.data
         }, status=200)
-    
-# 모든 사용자가 조회할 수 있는 게시글 목록 API
-class PetitionListView(APIView):
+
+#청원 동의 현황 페이지 네이션     
+class PetitionPaginationView(APIView):
     def get(self, request):
-        # 모든 청원 데이터를 조회
-        petitions = Petition.objects.all()  
-        serializer = PetitionSerializer(petitions, many=True)
+        page = request.query_params.get("page", 1)
+        petitions = Petition.objects.all().order_by('-created_at')  # 최신순 정렬
+        paginator = Paginator(petitions, 20)  # 한 페이지에 20개씩
+
+        try:
+            paginated = paginator.page(page)
+        except:
+            return Response({
+                "success": False,
+                "message": "존재하지 않는 페이지입니다."
+            }, status=404)
+
+        serializer = PetitionSerializer(paginated, many=True)
         return Response({
             "success": True,
-            "message": "청원 리스트 조회 성공",
-            "data": serializer.data
-        }, status=200)
+            "message": "청원 조회 성공",
+            "data": serializer.data,
+            "page": int(page),
+            "total_pages": paginator.num_pages
+        })
         
 # 게시글 작성 API
 class PostCreateView(APIView):
@@ -360,6 +368,44 @@ class PostCreateView(APIView):
         )
 
         return Response({"success": True, "message": "게시글 작성 완료", "post": PostSerializer(post).data}, status=201)
+
+# 단건 게시글 페이지 API
+class PostDetailView(APIView):
+    def get(self, request, post_id):
+        try:
+            post = Post.objects.get(id=post_id)
+            post_data = PostSerializer(post).data
+
+            # 댓글 목록 + 작성일 + 작성자 아이디
+            comments = Comment.objects.filter(post=post).order_by('created_at')
+            comment_data = CommentSerializer(comments, many=True).data
+
+            # 투표 정보
+            total_votes = Vote.objects.filter(post=post).count()
+            if total_votes > 0:
+                yes_votes = Vote.objects.filter(post=post, choice=True).count()
+                yes_ratio = round(yes_votes / total_votes * 100, 2)
+                no_ratio = 100 - yes_ratio
+                vote_result = {
+                    "yes": yes_ratio,
+                    "no": no_ratio,
+                    "total": total_votes
+                }
+            else:
+                vote_result = None
+
+            return Response({
+                "success": True,
+                "post": post_data,
+                "comments": comment_data,
+                "vote_result": vote_result
+            })
+
+        except Post.DoesNotExist:
+            return Response({
+                "success": False,
+                "message": "해당 게시글이 존재하지 않습니다."
+            }, status=404)
 
 # 찬반 투표 API
 class VoteView(APIView):
@@ -398,3 +444,25 @@ class CommentCreateView(APIView):
             post = Post.objects.get(id=post_id)
         except Post.DoesNotExist:
             return Response({"error": "게시글을 찾을 수 없습니다."}, status=404)
+
+        comment = Comment.objects.create(
+            post=post,
+            user=request.user,
+            content=content
+        )
+
+        return Response({
+            "success": True,
+            "comment": CommentSerializer(comment).data  # ➤ userid  포함됨
+        }, status=201)
+
+#특정 게시글에 대한 댓글 리스트 조회 뷰
+class CommentListByPostView(APIView):
+    def get(self, request, post_id):
+        comments = Comment.objects.filter(post_id=post_id).order_by('created_at')
+        serializer = CommentSerializer(comments, many=True)
+        return Response({
+            "success": True,
+            "message": "댓글 조회 성공",
+            "data": serializer.data
+        })

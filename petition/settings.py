@@ -59,6 +59,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'rest_framework',
     'lawmembers',
+    "keywordAnalysis",
 ]
 
 MIDDLEWARE = [

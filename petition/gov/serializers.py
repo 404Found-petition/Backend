@@ -1,15 +1,15 @@
 from rest_framework import serializers
 from django.contrib.auth import authenticate
-from .models import CustomUser, History, PredictionResult, Vote, Post, Comment
+from .models import CustomUser, History, PredictionResult, Vote, Post, Comment, Petition
 
 # CustomUser 모델을 직렬화하는 클래스
 class CustomUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
         # 직렬화할 필드 정의
-        fields = ['id', 'userid', 'name', 'nickname', 'phone_num', 'password']
+        fields = ['id', 'userid', 'name', 'phone_num', 'password']
         # password 필드는 쓰기 전용으로 설정하여 직렬화 시에만 사용되게 함
-        extra_kwargs = {'password': {'write_only': True}}
+        extra_kwargs = {'password': {'write_only': True}, 'name': {'read_only': True}}
 
     # 사용자가 생성될 때 password를 해싱하여 저장하는 create 메서드
     def create(self, validated_data):
@@ -84,12 +84,25 @@ class UserUpdateSerializer(serializers.ModelSerializer):
 
 # PostSerializer 추가 - POST 모델의 인스턴스를 JSON으로 직렬화해서 프론트에 보내줌줌
 class PostSerializer(serializers.ModelSerializer):
+    userid = serializers.CharField(source='user.userid', read_only=True)
+
     class Meta:
         model = Post
-        fields = '__all__'
+        fields = ['id', 'title', 'content', 'created_at', 'userid']
+
+# PetitionSerializer 추가
+class PetitionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Petition
+        fields = '__all__'        
 
 # CommentSerializer 추가 - 댓글을 프론트로 응답하거나, 저장할 때 유효성 검사를 하려면 필요.
 class CommentSerializer(serializers.ModelSerializer):
+    userid = serializers.CharField(source='user.userid', read_only=True)
+
     class Meta:
         model = Comment
-        fields = '__all__'
+        fields = ['id', 'post', 'content', 'created_at', 'updated_at', 'userid']
+
+
+

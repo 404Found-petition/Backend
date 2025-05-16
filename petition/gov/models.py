@@ -32,9 +32,8 @@ class CustomUserManager(BaseUserManager):
 class CustomUser(AbstractBaseUser, PermissionsMixin):
     # 사용자 아이디 필드 (unique하게 설정)
     userid = models.CharField(max_length=50, unique=True)
-    # 사용자 이름, 닉네임, 전화번호 필드
+    # 사용자 이름, 전화번호 필드
     name = models.CharField(max_length=50)
-    nickname = models.CharField(max_length=50, unique=True)
     phone_num = models.CharField(max_length=20)
 
     # 기본 활성화 여부, staff 권한 설정
@@ -53,10 +52,13 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
 
 # History 모델 - 사용자의 예측 기록을 저장하는 모델
 class History(models.Model):
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)  # 사용자와 연결
-    search_petition = models.CharField(max_length=200)  # 청원 내용
-    search_petition_percentage = models.FloatField()  # 예측 결과
-    history_date = models.DateTimeField(auto_now_add=True)  # 예측한 시간
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='history')  # related_name 추가
+    search_petition = models.TextField()  # 검색된 청원 텍스트
+    search_petition_percentage = models.FloatField()  # 예측 확률
+    history_date = models.DateTimeField(auto_now_add=True)  # 예측 기록 작성 시간
+
+    def __str__(self):
+        return f"{self.user} - {self.search_petition} ({self.history_date})"
 
 # PredictionResult 모델 - 청원 예측 결과를 저장하는 모델
 class PredictionResult(models.Model):
@@ -79,7 +81,7 @@ class Vote(models.Model):
         
 # Post 모델 - 게시글을 작성하는 모델
 class Post(models.Model):
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)  # 사용자가 삭제되면 게시글도 삭제
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='posts')  # related_name 추가
     title = models.CharField(max_length=200)  # 게시글 제목
     content = models.TextField()  # 게시글 내용
     created_at = models.DateTimeField(auto_now_add=True)  # 게시글 작성 시간
@@ -91,11 +93,38 @@ class Post(models.Model):
 
 # Comment 모델 - 게시글에 대한 댓글을 작성하는 모델
 class Comment(models.Model):
-    post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name='comments')
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-    content = models.TextField()
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='comments')  # related_name 추가
+    post = models.ForeignKey(Post, on_delete=models.CASCADE)  # 해당 댓글이 속한 게시글
+    content = models.TextField()  # 댓글 내용
+    created_at = models.DateTimeField(auto_now_add=True)  # 댓글 작성 시간
+    updated_at = models.DateTimeField(auto_now=True)  # 댓글 수정 시간
 
     def __str__(self):
-        return f"댓글 by {self.user.nickname} on {self.post.title}"  # 댓글 작성자와 게시글 제목을 반환
+        return self.content  # 댓글 내용 반환
+
+class Petition(models.Model):
+    title = models.CharField(max_length=300)  # 청원 제목
+    content = models.TextField(blank=True, null=True)  # 청원 내용
+    agreement_percentage = models.FloatField()  # 동의율 퍼센트
+    created_at = models.DateTimeField(auto_now_add=True)  # 생성일
+
+    def __str__(self):
+        return self.title
+    
+# 워드 클라우드 요약 저장
+class PetitionSummary(models.Model):
+    title = models.CharField(max_length=300)
+    summary = models.TextField()
+    created_at = models.DateField()
+
+    def __str__(self):
+        return f"{self.title} - {self.created_at}"
+
+# 워드 클라우드 월별 저장
+class MonthlyKeyword(models.Model):
+    month = models.CharField(max_length=7)  # e.g., '2024-04'
+    keyword = models.CharField(max_length=100)
+    score = models.FloatField()
+
+    class Meta:
+        unique_together = ('month', 'keyword')

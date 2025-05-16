@@ -25,6 +25,14 @@ def load_monthly_data():
     df["월"] = df["등록일"].dt.to_period("M").astype(str)
     return df
 
+# 청원 요지 추출 위한 간단한 요약 함수
+def get_petition_summary(text, max_len=300):
+    if not isinstance(text, str):
+        return ""
+    summary = text.strip().replace("\n", " ")
+    return summary[:max_len] + "..." if len(summary) > max_len else summary
+
+
 # ✅ 사용 가능한 월 목록 반환
 def get_available_months():
     df = load_monthly_data()
@@ -69,5 +77,4 @@ def extract_keywords_by_month_tfidf(month):
     tfidf_dict = dict(zip(feature_names, scores))
     top_words = sorted(tfidf_dict.items(), key=lambda x: x[1], reverse=True)[:100]
     return [{"word": w, "score": round(s, 4)} for w, s in top_words if w not in STOPWORDS]
-
 
