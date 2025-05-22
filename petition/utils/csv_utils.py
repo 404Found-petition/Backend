@@ -6,7 +6,7 @@ import pandas as pd
 from django.conf import settings
 from petition.gov.models import PredictionResult, MonthlyKeyword
 from wcdata.utils import load_monthly_data, get_petition_summary, extract_keywords_by_month
-from keywordAnalysis.models import PetitionSummary
+# from keywordAnalysis.models import PetitionSummary
 
 # 아래 3개 청원 동의 현황 페이지용
 # ✅ 원본 데이터를 받아 CSV로 저장
@@ -35,18 +35,18 @@ def to_csv(dataframe, filename):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     dataframe.to_csv(path, index=False, encoding='utf-8-sig')
     
-# ✅ 요약 CSV + DB 저장
-def save_summary_csv_and_db(df, filename="청원_요약본.csv"):
-    path = os.path.join(settings.BASE_DIR, "AI", filename)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    df.to_csv(path, index=False, encoding="utf-8-sig")
+# # ✅ 요약 CSV + DB 저장
+# def save_summary_csv_and_db(df, filename="청원_요약본.csv"):
+#     path = os.path.join(settings.BASE_DIR, "AI", filename)
+#     os.makedirs(os.path.dirname(path), exist_ok=True)
+#     df.to_csv(path, index=False, encoding="utf-8-sig")
 
-    for _, row in df.iterrows():
-        PetitionSummary.objects.update_or_create(
-            title=row["PTT_NM"],
-            summary=row["청원요지"],
-            created_at=row["등록일"]
-        )
+#     for _, row in df.iterrows():
+#         PetitionSummary.objects.update_or_create(
+#             title=row["PTT_NM"],
+#             summary=row["청원요지"],
+#             created_at=row["등록일"]
+#         )
     
 # ✅ 키워드 CSV를 DB로 저장
 def load_keywords_from_csv_to_db(filename):

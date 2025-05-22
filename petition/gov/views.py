@@ -1,16 +1,17 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework import status
+from rest_framework import status, serializers
 from rest_framework.decorators import api_view
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework.permissions import IsAuthenticatedOrReadOnly
 import os
 import pathlib
 import joblib
 import numpy as np
 import torch
 from transformers import AutoTokenizer, AutoModel
-from .models import CustomUser, History, PredictionResult, Post, Vote, Comment, Petition
+from .models import CustomUser, History, Post, Vote, Comment, Petition
 from .serializers import CustomUserSerializer, LoginSerializer, HistorySerializer, PredictionResultSerializer, UserUpdateSerializer, PostSerializer, CommentSerializer, PetitionSerializer
 from wcdata.utils import extract_keywords_by_month, get_available_months, extract_keywords_by_month_tfidf
 from keywordAnalysis.csvutils import get_field_counts
@@ -20,9 +21,10 @@ from django.conf import settings
 from google.oauth2 import id_token
 from google.auth.transport import requests
 from .tokens import create_jwt_pair_for_user
-from petition.gov.models import MonthlyKeyword
+from petition.gov.models import MonthlyKeyword, PredictionResult
 from django.contrib.auth.hashers import make_password 
 from django.contrib.auth import get_user_model
+from rest_framework_simplejwt.authentication import JWTAuthentication
 
 
 
@@ -127,17 +129,34 @@ class LogoutView(APIView):
                 "message": str(e)
             }, status=status.HTTP_400_BAD_REQUEST)
         
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from .models import CustomUser  # 모델 import 필요
+
 # 아이디 중복 체크 API
 @api_view(['GET'])
 def check_duplicate(request):
     # 쿼리 파라미터로 아이디 값을 받아옴
     userid = request.query_params.get('userid')
+    print("📌 [중복 확인 요청] 받은 userid:", userid)
 
     # 아이디 중복 여부 확인
     if userid and CustomUser.objects.filter(userid=userid).exists():
-        return Response({"success": False, "field": "userid", "message": "이미 사용 중인 아이디입니다."})
+        print("❌ [중복 확인 결과] 이미 존재하는 아이디입니다.")
+        return Response({
+            "success": False,
+            "field": "userid",
+            "message": "이미 사용 중인 아이디입니다.",
+            "available": False
+        })
 
-    return Response({"success": True, "message": "사용 가능한 아이디입니다."})
+    print("✅ [중복 확인 결과] 사용 가능한 아이디입니다.")
+    return Response({
+        "success": True,
+        "message": "사용 가능한 아이디입니다.",
+        "available": True
+    })
+
 
 
 # 회원 정보 수정 뷰
@@ -390,34 +409,32 @@ class PostCreateView(APIView):
 
 # 단건 게시글 페이지 API
 class PostDetailView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticatedOrReadOnly]
+
     def get(self, request, post_id):
         try:
             post = Post.objects.get(id=post_id)
             post_data = PostSerializer(post).data
 
-            # 댓글 목록 + 작성일 + 작성자 아이디
             comments = Comment.objects.filter(post=post).order_by('created_at')
             comment_data = CommentSerializer(comments, many=True).data
 
-            # 투표 정보
-            total_votes = Vote.objects.filter(post=post).count()
-            if total_votes > 0:
-                yes_votes = Vote.objects.filter(post=post, choice=True).count()
-                yes_ratio = round(yes_votes / total_votes * 100, 2)
-                no_ratio = 100 - yes_ratio
-                vote_result = {
-                    "yes": yes_ratio,
-                    "no": no_ratio,
-                    "total": total_votes
-                }
-            else:
-                vote_result = None
+            yes_votes = Vote.objects.filter(post=post, choice=True).count()
+            no_votes = Vote.objects.filter(post=post, choice=False).count()
+            vote_result = {"yes": yes_votes, "no": no_votes}
+
+            # ✅ 현재 계정 기준으로만 voted 여부 판단
+            has_voted = False
+            if request.user and request.user.is_authenticated:
+                has_voted = Vote.objects.filter(post=post, user=request.user).exists()
 
             return Response({
                 "success": True,
                 "post": post_data,
                 "comments": comment_data,
-                "vote_result": vote_result
+                "vote_result": vote_result,
+                "has_voted": has_voted  # 🔥 이 값을 프론트에서 판단 기준으로 사용
             })
 
         except Post.DoesNotExist:
@@ -425,6 +442,7 @@ class PostDetailView(APIView):
                 "success": False,
                 "message": "해당 게시글이 존재하지 않습니다."
             }, status=404)
+
 
 # 찬반 투표 API
 class VoteView(APIView):
@@ -547,4 +565,28 @@ class GoogleLoginView(APIView):
         except Exception as e:
             print("❌ 구글 로그인 실패:", str(e))  # 여기에 실패 원인 출력됨
             return Response({"error": "유효하지 않은 토큰입니다."}, status=400)
+
+# 사용자 정보 조회 API
+class CurrentUserView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        print("📥 요청 헤더:", request.headers)
+        print("🔐 인증된 유저:", request.user)
+        return Response({
+            "userid": request.user.userid,
+            "name": request.user.name,
+            "phone_num": request.user.phone_num,
+        })
+# 아래 2개 청원 예측 현황 용
+class PredictionResultSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PredictionResult
+        fields = ['id', 'petition_title', 'petition_content', 'prediction_percentage']
+
+class PredictionResultListView(APIView):
+    def get(self, request):
+        results = PredictionResult.objects.all()
+        serializer = PredictionResultSerializer(results, many=True)
+        return Response(serializer.data)
 

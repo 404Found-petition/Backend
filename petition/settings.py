@@ -60,6 +60,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'lawmembers',
     "keywordAnalysis",
+    'ai.apps.AiConfig'
 ]
 
 MIDDLEWARE = [

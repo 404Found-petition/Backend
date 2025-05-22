@@ -10,7 +10,7 @@ class CustomUserSerializer(serializers.ModelSerializer):
         fields = ['id', 'userid', 'name', 'phone_num', 'password']
         extra_kwargs = {
             'password': {'write_only': True},
-            'name': {'read_only': True}
+            #'name': {'read_only': True}
         }
 
     def create(self, validated_data):
@@ -19,12 +19,16 @@ class CustomUserSerializer(serializers.ModelSerializer):
 
 class LoginSerializer(serializers.Serializer):
     userid = serializers.CharField()
-    password = serializers.CharField()
+    password = serializers.CharField(write_only=True)  # ✅ 보안상 필수로 추가됨
 
     def validate(self, data):
-        user = authenticate(userid=data.get('userid'), password=data.get('password'))
-        if not user:
-            raise serializers.ValidationError("아이디나 비밀번호를 다시 확인해주세요.")
+        userid = data.get('userid')
+        password = data.get('password')
+        user = authenticate(username=userid, password=password)
+
+        if user is None:
+            raise serializers.ValidationError("아이디나 비밀번호가 올바르지 않습니다.")
+        
         data['user'] = user
         return data
 
@@ -58,15 +62,20 @@ class UserUpdateSerializer(serializers.ModelSerializer):
 
 # -------------------- 게시글 관련 --------------------
 class CommentSerializer(serializers.ModelSerializer):
-    nickname = serializers.SerializerMethodField()
+    userid = serializers.SerializerMethodField()
+    name = serializers.SerializerMethodField()
     date = serializers.DateTimeField(source='created_at', format='%Y-%m-%d')
 
     class Meta:
         model = Comment
-        fields = ['nickname', 'content', 'date']
+        fields = ['id', 'userid', 'name', 'content', 'date']  # id 추가!
 
-    def get_nickname(self, obj):
-        return obj.user.name if obj.user and obj.user.name else "익명"
+    def get_userid(self, obj):
+        return obj.user.userid if obj.user else "알 수 없음"
+
+    def get_name(self, obj):
+        return obj.user.name if obj.user else "알 수 없음"
+
 
 
 class PostSerializer(serializers.ModelSerializer):

@@ -8,6 +8,7 @@ from .views import (
     check_duplicate,
     petition_field_stats,
     PredictionResultView,
+    PredictionResultListView,
     VoteView,
     PostPaginationView,
     UserUpdateView,
@@ -16,8 +17,10 @@ from .views import (
     PostCreateView,
     CommentCreateView,
     PetitionPaginationView,     
-    GoogleLoginView,  # ✅ 추가
+    GoogleLoginView,
     MonthlyKeywordAPIView,
+    CurrentUserView  # ✅ 사용자 정보 조회 뷰 임포트
+    
 )
 
 urlpatterns = [
@@ -30,6 +33,7 @@ urlpatterns = [
     path("wordcloud/", MonthlyKeywordAPIView.as_view(), name="wordcloud"),
     path('petition-fields/', petition_field_stats, name='petition_fields'),
     path('petitions/page/', PetitionPaginationView.as_view(), name='petition_pagination'),
+    path('predictions/', PredictionResultListView.as_view(), name='prediction_results'),
     path('prediction-results/', PredictionResultView.as_view(), name='prediction_results'),
     path('posts/create/', PostCreateView.as_view(), name='post_create'),
     path('posts/<int:post_id>/', PostDetailView.as_view(), name='post_detail'),
@@ -39,7 +43,8 @@ urlpatterns = [
     path('posts/', PostPaginationView.as_view(), name='post_list'),
     path('update-user/', UserUpdateView.as_view(), name='update_user'),
     path("monthly-keywords/", MonthlyKeywordAPIView.as_view(), name="monthly-keywords"),
-    # ✅ Google 로그인 경로 추가
     path('social-login/google/', GoogleLoginView.as_view(), name='google_login'),
-    
+
+    # ✅ 현재 로그인한 사용자 정보 조회
+    path('user/', CurrentUserView.as_view(), name='current_user'),
 ]
