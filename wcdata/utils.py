@@ -3,6 +3,8 @@ import pandas as pd
 from konlpy.tag import Okt
 from collections import Counter
 from sklearn.feature_extraction.text import TfidfVectorizer
+from petition.gov.models import MonthlyKeyword
+from datetime import datetime
 
 # ✅ 불용어 목록
 STOPWORDS = set([
@@ -78,3 +80,34 @@ def extract_keywords_by_month_tfidf(month):
     top_words = sorted(tfidf_dict.items(), key=lambda x: x[1], reverse=True)[:100]
     return [{"word": w, "score": round(s, 4)} for w, s in top_words if w not in STOPWORDS]
 
+def store_keywords_in_db():
+    from petition.gov.models import MonthlyKeyword
+    import pandas as pd
+    from konlpy.tag import Okt
+    from collections import Counter
+
+    # ✅ CSV 로드
+    df = pd.read_csv("wcdata/병합된_청원_데이터.csv")
+
+    # ✅ 날짜 파싱 및 월 컬럼 생성 (NaT 제거 포함)
+    df["등록일"] = pd.to_datetime(df["RCP_DT"], errors="coerce")
+    df = df[df["등록일"].notna()]  # NaT 제거
+    df["월"] = df["등록일"].dt.to_period("M").astype(str)  # "2024-04" 형식으로 변환
+
+    # ✅ 기존 DB 데이터 삭제
+    MonthlyKeyword.objects.all().delete()
+
+    okt = Okt()
+
+    for month, group in df.groupby("월"):
+        texts = (group["PTT_NM"].fillna("") + " " + group["청원요지"].fillna("")).tolist()
+        joined = " ".join(texts)
+        nouns = [w for w in okt.nouns(joined) if 2 <= len(w) <= 5]
+        counter = Counter(nouns)
+
+        for word, count in counter.most_common(100):
+            MonthlyKeyword.objects.update_or_create(
+                month=month,
+                keyword=word,
+                defaults={"score": count}
+            )

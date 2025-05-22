@@ -26,4 +26,6 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include('petition.gov.urls')),  # 모든 API는 gov/urls.py에서 정의
     path('api/', include(router.urls)),
+    path("api/", include("keywordAnalysis.urls")),
+    path('api/lawmembers/', include('lawmembers.urls')),
 ]

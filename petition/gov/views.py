@@ -11,12 +11,19 @@ import numpy as np
 import torch
 from transformers import AutoTokenizer, AutoModel
 from .models import CustomUser, History, PredictionResult, Post, Vote, Comment, Petition
-from .serializers import CustomUserSerializer, LoginSerializer, HistorySerializer, PredictionResultSerializer, UserUpdateSerializer, PostSerializer, CommentSerializer
+from .serializers import CustomUserSerializer, LoginSerializer, HistorySerializer, PredictionResultSerializer, UserUpdateSerializer, PostSerializer, CommentSerializer, PetitionSerializer
 from wcdata.utils import extract_keywords_by_month, get_available_months, extract_keywords_by_month_tfidf
-from keywordAnalysis.fieldValue import get_field_counts
+from keywordAnalysis.csvutils import get_field_counts
 from django.core.paginator import Paginator
 from django.shortcuts import redirect
 from django.conf import settings
+from google.oauth2 import id_token
+from google.auth.transport import requests
+from .tokens import create_jwt_pair_for_user
+from petition.gov.models import MonthlyKeyword
+from django.contrib.auth.hashers import make_password 
+from django.contrib.auth import get_user_model
+
 
 
 # KoBERT 모델 초기화
@@ -233,6 +240,11 @@ class MyHistoryView(APIView):
             "data": serializer.data
         })
 
+# 그래프
+class PetitionStatisticsAPIView(APIView):
+    def get(self, request):
+        return Response(get_field_counts())
+
 # 워드클라우드 관련 데이터 조회 API
 @api_view(['GET'])
 def wordcloud_data(request):
@@ -348,9 +360,9 @@ class PetitionPaginationView(APIView):
             "total_pages": paginator.num_pages
         })
         
-# 게시글 작성 API
+# 게시글 작성 API (✅ 테스트용으로 인증 없이 허용)
 class PostCreateView(APIView):
-    permission_classes = [IsAuthenticated]
+    # permission_classes = [IsAuthenticated]  # ← ✅ 테스트 시 주석 처리
 
     def post(self, request):
         title = request.data.get('title')
@@ -360,14 +372,21 @@ class PostCreateView(APIView):
         if not title or not content:
             return Response({"error": "제목과 내용을 입력해야 합니다."}, status=400)
 
+        # ✅ 로그인 안 해도 작성 가능하게 하기 위해 user=None 처리
+        user = request.user if request.user.is_authenticated else None
+
         post = Post.objects.create(
-            user=request.user,
+            user=user,
             title=title,
             content=content,
             has_poll=has_poll
         )
 
-        return Response({"success": True, "message": "게시글 작성 완료", "post": PostSerializer(post).data}, status=201)
+        return Response({
+            "success": True,
+            "message": "게시글 작성 완료",
+            "post": PostSerializer(post).data
+        }, status=201)
 
 # 단건 게시글 페이지 API
 class PostDetailView(APIView):
@@ -456,13 +475,76 @@ class CommentCreateView(APIView):
             "comment": CommentSerializer(comment).data  # ➤ userid  포함됨
         }, status=201)
 
-#특정 게시글에 대한 댓글 리스트 조회 뷰
+#특정 게시글에 대한 댓글 리스트 조회 뷰 // front에서 "success":true 인 댓글만 가져가야 함
 class CommentListByPostView(APIView):
     def get(self, request, post_id):
-        comments = Comment.objects.filter(post_id=post_id).order_by('created_at')
+        comments = Comment.objects.filter(post_id=post_id, user__isnull=False).order_by('-created_at')
+
+        if not comments.exists():
+            return Response({
+                "success": False,
+                "message": "댓글이 존재하지 않습니다.",
+                "data": []
+            }, status=404)
+
         serializer = CommentSerializer(comments, many=True)
         return Response({
             "success": True,
             "message": "댓글 조회 성공",
             "data": serializer.data
         })
+
+# 워드클라우드
+class MonthlyKeywordAPIView(APIView):
+    def get(self, request):
+        month = request.GET.get("month")
+
+        # 🔁 month가 없으면 가장 최신 달 자동 선택
+        if not month:
+            latest = MonthlyKeyword.objects.order_by("-month").first()
+            if latest:
+                month = latest.month
+            else:
+                return Response({"error": "데이터가 없습니다."}, status=404)
+
+        # 🔎 해당 월 데이터 불러오기
+        keywords = MonthlyKeyword.objects.filter(month=month).order_by("-score")[:100]
+        result = [{"word": k.keyword, "score": round(k.score, 4)} for k in keywords]
+        return Response({
+            "month": month,
+            "keywords": result
+        })
+
+
+#google 로그인
+class GoogleLoginView(APIView):
+    def post(self, request):
+        token = request.data.get("token")
+        print("✅ 받은 토큰:", token)
+
+        CLIENT_ID = "993737985073-qhthheoiruduqv4oaem4ao6evq4i4ovm.apps.googleusercontent.com"  # ⚠️ 반드시 실제 값으로 대체
+
+        try:
+            print("✅ CLIENT_ID:", CLIENT_ID)
+            print("✅ 검증 시도 중...")
+            idinfo = id_token.verify_oauth2_token(token, requests.Request(), CLIENT_ID)
+            print("✅ 검증 성공:", idinfo)
+
+            email = idinfo["email"]
+            name = idinfo.get("name", "사용자")  # 이름이 없을 경우 대비
+
+            User = get_user_model()
+            user, created = User.objects.get_or_create(userid=email, defaults={"name": name})
+            print("✅ 사용자 생성 여부:", created)
+
+            refresh = RefreshToken.for_user(user)
+            return Response({
+                "access": str(refresh.access_token),
+                "refresh": str(refresh),
+                "userid": user.userid,
+                "name": user.name
+            })
+        except Exception as e:
+            print("❌ 구글 로그인 실패:", str(e))  # 여기에 실패 원인 출력됨
+            return Response({"error": "유효하지 않은 토큰입니다."}, status=400)
+

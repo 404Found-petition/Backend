@@ -73,8 +73,9 @@ class PredictionResult(models.Model):
 # Vote 모델 - 사용자가 게시글에 대해 찬반 투표를 할 수 있는 모델
 class Vote(models.Model):
     post = models.ForeignKey('Post', on_delete=models.CASCADE)
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='votes')  # 🔧 수정
     choice = models.BooleanField()
+
     class Meta:
         unique_together = ('post', 'user')
 
