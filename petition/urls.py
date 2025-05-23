@@ -18,6 +18,7 @@ from django.contrib import admin
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from lawmembers.views import LawmakerViewSet
+from ai.views import PublicPredictionListView
 
 router = DefaultRouter()
 router.register(r'lawmembers', LawmakerViewSet)
@@ -28,4 +29,5 @@ urlpatterns = [
     path('api/', include(router.urls)),
     path("api/", include("keywordAnalysis.urls")),
     path('api/lawmembers/', include('lawmembers.urls')),
+    path("api/public-predictions/", PublicPredictionListView.as_view()),
 ]
