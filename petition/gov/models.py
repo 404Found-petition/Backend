@@ -3,6 +3,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.conf import settings
 
+
 # Custom user manager for creating and managing CustomUser
 class CustomUserManager(BaseUserManager):
     def create_user(self, userid, password=None, **extra_fields):
@@ -60,15 +61,16 @@ class History(models.Model):
     def __str__(self):
         return f"{self.user} - {self.search_petition} ({self.history_date})"
 
-# PredictionResult 모델 - 청원 예측 결과를 저장하는 모델
-class PredictionResult(models.Model):
-    petition_title = models.CharField(max_length=300)
-    petition_content = models.TextField(null=True, blank=True)
+# UserPrediction 모델 - 청원 예측 결과를 저장하는 모델 (이름바꿈)
+class UserPrediction(models.Model):
+    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
+    petition_title = models.CharField(max_length=200)
+    petition_content = models.TextField()
     prediction_percentage = models.FloatField()
     predicted_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"{self.petition_title} - {self.prediction_percentage:.2f}%"
+        return f"{self.petition_title} ({self.prediction_percentage}%)"
 
 # Vote 모델 - 사용자가 게시글에 대해 찬반 투표를 할 수 있는 모델
 class Vote(models.Model):

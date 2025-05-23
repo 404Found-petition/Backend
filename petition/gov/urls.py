@@ -19,8 +19,10 @@ from .views import (
     PetitionPaginationView,     
     GoogleLoginView,
     MonthlyKeywordAPIView,
-    CurrentUserView  # ✅ 사용자 정보 조회 뷰 임포트
-    
+    CurrentUserView, # ✅ 사용자 정보 조회 뷰 임포트
+    MyPostListView,  # ✅ 추가
+    MyPredictionListView, # ✅ 추가
+    RecentPostsAPIView,
 )
 
 urlpatterns = [
@@ -44,7 +46,10 @@ urlpatterns = [
     path('update-user/', UserUpdateView.as_view(), name='update_user'),
     path("monthly-keywords/", MonthlyKeywordAPIView.as_view(), name="monthly-keywords"),
     path('social-login/google/', GoogleLoginView.as_view(), name='google_login'),
+    path('posts/recent/', RecentPostsAPIView.as_view()),
 
     # ✅ 현재 로그인한 사용자 정보 조회
     path('user/', CurrentUserView.as_view(), name='current_user'),
+    path('myposts/', MyPostListView.as_view(), name='my_posts'),
+    path('my-predictions/', MyPredictionListView.as_view(), name='my_predictions'),
 ]

@@ -12,7 +12,7 @@ import numpy as np
 import torch
 from transformers import AutoTokenizer, AutoModel
 from .models import CustomUser, History, Post, Vote, Comment, Petition
-from .serializers import CustomUserSerializer, LoginSerializer, HistorySerializer, PredictionResultSerializer, UserUpdateSerializer, PostSerializer, CommentSerializer, PetitionSerializer
+from .serializers import CustomUserSerializer, LoginSerializer, HistorySerializer, UserPredictionSerializer, UserUpdateSerializer, PostSerializer, CommentSerializer, PetitionSerializer
 from wcdata.utils import extract_keywords_by_month, get_available_months, extract_keywords_by_month_tfidf
 from keywordAnalysis.csvutils import get_field_counts
 from django.core.paginator import Paginator
@@ -21,11 +21,11 @@ from django.conf import settings
 from google.oauth2 import id_token
 from google.auth.transport import requests
 from .tokens import create_jwt_pair_for_user
-from petition.gov.models import MonthlyKeyword, PredictionResult
+from petition.gov.models import MonthlyKeyword, UserPrediction
 from django.contrib.auth.hashers import make_password 
 from django.contrib.auth import get_user_model
 from rest_framework_simplejwt.authentication import JWTAuthentication
-
+from .models import UserPrediction
 
 
 # KoBERT 모델 초기화
@@ -42,6 +42,18 @@ def get_bert_embedding(text):
     # [CLS] 토큰의 임베딩을 가져오고, 이를 numpy 배열로 반환
     cls_embedding = outputs.last_hidden_state[:, 0, :].squeeze().numpy()
     return cls_embedding
+
+# 최근 게시글 6개 반환 API
+class RecentPostsAPIView(APIView):
+    def get(self, request):
+        posts = Post.objects.all().order_by("-created_at")[:6]
+        serializer = PostSerializer(posts, many=True)
+        return Response({
+            "success": True,
+            "message": "최근 게시글 6개",
+            "data": serializer.data
+        })
+
 
 # 회원가입 뷰
 class RegisterView(APIView):
@@ -178,9 +190,20 @@ class UserUpdateView(APIView):
 
 # 게시글 페이지네이션 뷰
 class PostPaginationView(APIView):
+    permission_classes = [IsAuthenticatedOrReadOnly]
+
     def get(self, request):
         page = request.query_params.get("page", 1)
-        posts = Post.objects.all().order_by('-created_at')
+        mine = request.query_params.get("mine", "false").lower() == "true"
+
+        print("📌 mine 파라미터:", mine)
+        print("📌 로그인한 사용자:", request.user)
+
+        if mine and request.user.is_authenticated:
+            posts = Post.objects.filter(user=request.user).order_by('-created_at')
+        else:
+            posts = Post.objects.all().order_by('-created_at')
+
         paginator = Paginator(posts, 4)
 
         try:
@@ -200,9 +223,12 @@ class PostPaginationView(APIView):
             "total_pages": paginator.num_pages
         })
 
+
+
+
 # 청원 예측을 수행하고 결과를 기록하는 API
 class PetitionPredictView(APIView):
-    permission_classes = [IsAuthenticated]  # 로그인한 사용자만 예측 가능
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
         petition_text = request.data.get('petition_text')
@@ -225,24 +251,25 @@ class PetitionPredictView(APIView):
         except Exception as e:
             return Response({"error": "AI 예측 중 오류 발생"}, status=500)
 
-        # 예측 결과를 History 모델에 저장
-        history = History.objects.create(
+        # ✅ 기존 History 저장
+        History.objects.create(
             user=user,
             search_petition=petition_text,
             search_petition_percentage=pred_score
         )
 
-        return Response({
-            "success": True,
-            "predicted_percentage": round(pred_score, 2),
-            "history_id": history.id
-        }, status=200)
+        # ✅ 추가할 UserPrediction 저장
+        # 예측 결과가 나온 후 (예: result = 31.0)
+        UserPrediction.objects.create(
+            user=request.user,
+            petition_title=petition_text[:200],
+            petition_content=petition_text,
+            prediction_percentage=pred_score
+        )
 
         return Response({
             "success": True,
-            "message": "예측 완료",
-            "predicted_percentage": round(pred_score, 2),
-            "history_id": history.id
+            "predicted_percentage": round(pred_score, 2)
         }, status=200)
 
 # 개인이 과거에 청원 예측 수행한 결과 기록 조회 API
@@ -258,6 +285,21 @@ class MyHistoryView(APIView):
             "message": "예측 기록 조회 성공",
             "data": serializer.data
         })
+        
+# 사용자별 UserPrediction 조회 API
+class MyPredictionResultView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        predictions = UserPrediction.objects.filter(user=user).order_by('-predicted_at')
+        serializer = UserPredictionSerializer(predictions, many=True)
+        return Response({
+            "success": True,
+            "message": "사용자별 예측 기록 조회 성공",
+            "data": serializer.data
+        })
+
 
 # 그래프
 class PetitionStatisticsAPIView(APIView):
@@ -347,7 +389,7 @@ def petition_field_stats(request):
 # 로그인한 사용자가 예측 결과를 조회하는 API  --> 모든 사람이 다 볼 수 있게 변경
 class PredictionResultView(APIView):
     def get(self, request):
-        results = PredictionResult.objects.all().order_by('-predicted_at')
+        results = UserPrediction.objects.all().order_by('-predicted_at')
         serializer = PredictionResultSerializer(results, many=True)
         return Response({
             "success": True,
@@ -488,6 +530,9 @@ class CommentCreateView(APIView):
             content=content
         )
 
+        serialized = CommentSerializer(comment).data # 확인용
+        print("🧪 댓글 응답 내용:", serialized)  # ✅ 확인용 로그
+
         return Response({
             "success": True,
             "comment": CommentSerializer(comment).data  # ➤ userid  포함됨
@@ -581,12 +626,42 @@ class CurrentUserView(APIView):
 # 아래 2개 청원 예측 현황 용
 class PredictionResultSerializer(serializers.ModelSerializer):
     class Meta:
-        model = PredictionResult
+        model = UserPrediction
         fields = ['id', 'petition_title', 'petition_content', 'prediction_percentage']
 
 class PredictionResultListView(APIView):
     def get(self, request):
-        results = PredictionResult.objects.all()
+        results = UserPrediction.objects.all()
         serializer = PredictionResultSerializer(results, many=True)
         return Response(serializer.data)
 
+
+class MyPostListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        posts = Post.objects.filter(user=user).order_by('-created_at')
+        paginator = Paginator(posts, 10)
+        page = request.query_params.get("page", 1)
+
+        try:
+            paginated = paginator.page(page)
+        except:
+            return Response({"success": False, "message": "페이지 없음"}, status=404)
+
+        serializer = PostSerializer(paginated, many=True)
+        return Response({
+            "success": True,
+            "data": serializer.data,
+            "page": int(page),
+            "total_pages": paginator.num_pages
+        })
+
+
+class MyPredictionListView(APIView):
+    def get(self, request):
+        user = request.user
+        queryset = UserPrediction.objects.filter(user=user).order_by('-predicted_at')
+        serializer = UserPredictionSerializer(queryset, many=True)
+        return Response(serializer.data)

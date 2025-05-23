@@ -1,7 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import authenticate
-from .models import CustomUser, History, PredictionResult, Vote, Post, Comment, Petition
-
+from .models import CustomUser, History, UserPrediction, Vote, Post, Comment, Petition
 
 # -------------------- 사용자 관련 --------------------
 class CustomUserSerializer(serializers.ModelSerializer):
@@ -63,18 +62,17 @@ class UserUpdateSerializer(serializers.ModelSerializer):
 # -------------------- 게시글 관련 --------------------
 class CommentSerializer(serializers.ModelSerializer):
     userid = serializers.SerializerMethodField()
-    name = serializers.SerializerMethodField()
     date = serializers.DateTimeField(source='created_at', format='%Y-%m-%d')
 
     class Meta:
         model = Comment
-        fields = ['id', 'userid', 'name', 'content', 'date']  # id 추가!
+        fields = ['id', 'userid', 'content', 'date']
 
     def get_userid(self, obj):
-        return obj.user.userid if obj.user else "알 수 없음"
-
-    def get_name(self, obj):
-        return obj.user.name if obj.user else "알 수 없음"
+        if obj.user and obj.user.userid:
+            uid = obj.user.userid
+            return uid[:3] + "*" * (len(uid) - 3)  # 예: abc**** 형태
+        return "익명"
 
 
 
@@ -87,7 +85,8 @@ class PostSerializer(serializers.ModelSerializer):
         fields = ['id', 'title', 'content', 'created_at', 'userid', 'comments']
 
     def get_userid(self, obj):
-        return obj.user.userid if obj.user else "익명"
+        uid = obj.user.userid  # 사용자 ID는 항상 존재함
+        return uid[:3] + "*" * (len(uid) - 3)  # 마스킹 처리 예: tes**** 
 
     def get_comments(self, obj):
         comments = Comment.objects.filter(post=obj).order_by('-created_at')[:2]
@@ -108,11 +107,10 @@ class HistorySerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
-class PredictionResultSerializer(serializers.ModelSerializer):
+class UserPredictionSerializer(serializers.ModelSerializer):
     class Meta:
-        model = PredictionResult
-        fields = ['id', 'petition_title', 'petition_content', 'prediction_percentage', 'predicted_at']
-
+        model = UserPrediction  # ← 변경
+        fields = '__all__'
 
 # -------------------- 투표 관련 --------------------
 class VoteSerializer(serializers.ModelSerializer):
