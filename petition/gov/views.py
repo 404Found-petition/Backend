@@ -26,6 +26,7 @@ from django.contrib.auth.hashers import make_password
 from django.contrib.auth import get_user_model
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from .models import UserPrediction
+from rest_framework.permissions import AllowAny
 
 
 # KoBERT 모델 초기화
@@ -629,20 +630,29 @@ class PredictionResultSerializer(serializers.ModelSerializer):
         model = UserPrediction
         fields = ['id', 'petition_title', 'petition_content', 'prediction_percentage']
 
+from rest_framework.permissions import AllowAny  # 👈 위 import 구역에 추가 필요
+
 class PredictionResultListView(APIView):
+    permission_classes = [AllowAny]  # 👈 이 줄 추가됨
+
     def get(self, request):
-        results = UserPrediction.objects.all()
+        results = UserPrediction.objects.all().order_by('-predicted_at')
         serializer = PredictionResultSerializer(results, many=True)
-        return Response(serializer.data)
+        return Response({
+            "success": True,
+            "message": "예측 결과 조회 성공",
+            "data": serializer.data
+        }, status=200)
 
 
+#사용자가 작성한 게시글 목록
 class MyPostListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         user = request.user
         posts = Post.objects.filter(user=user).order_by('-created_at')
-        paginator = Paginator(posts, 10)
+        paginator = Paginator(posts, 4) #한 페이지에 몇개의 포스트가 보이게 할지 설정
         page = request.query_params.get("page", 1)
 
         try:
@@ -656,6 +666,19 @@ class MyPostListView(APIView):
             "data": serializer.data,
             "page": int(page),
             "total_pages": paginator.num_pages
+        })
+
+#사용자가 작성한 최근 4개 게시물
+class MyRecentPostsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        posts = Post.objects.filter(user=user).order_by("-created_at")[:4]
+        serializer = PostSerializer(posts, many=True)
+        return Response({
+            "success": True,
+            "data": serializer.data
         })
 
 

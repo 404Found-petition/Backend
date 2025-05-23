@@ -4,7 +4,7 @@ class Lawmaker(models.Model):
     name = models.CharField(max_length=50, unique=True)
     party = models.CharField(max_length=100)
     representative_field = models.CharField(max_length=100)
-    seat_number = models.PositiveIntegerField(unique=True)
+    seat_number = models.IntegerField(unique=True)
     photo = models.ImageField(upload_to='photos/', blank=True, null=True)
 
     def __str__(self):

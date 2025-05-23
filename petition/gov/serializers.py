@@ -82,7 +82,7 @@ class PostSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Post
-        fields = ['id', 'title', 'content', 'created_at', 'userid', 'comments']
+        fields = ['id', 'title', 'content', 'created_at', 'userid', 'comments', 'has_poll']
 
     def get_userid(self, obj):
         uid = obj.user.userid  # 사용자 ID는 항상 존재함

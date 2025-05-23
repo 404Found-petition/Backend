@@ -23,6 +23,7 @@ from .views import (
     MyPostListView,  # ✅ 추가
     MyPredictionListView, # ✅ 추가
     RecentPostsAPIView,
+    MyRecentPostsView,
 )
 
 urlpatterns = [
@@ -36,7 +37,7 @@ urlpatterns = [
     path('petition-fields/', petition_field_stats, name='petition_fields'),
     path('petitions/page/', PetitionPaginationView.as_view(), name='petition_pagination'),
     path('predictions/', PredictionResultListView.as_view(), name='prediction_results'),
-    path('prediction-results/', PredictionResultView.as_view(), name='prediction_results'),
+    #path('prediction-results/', PredictionResultView.as_view(), name='prediction_results'),
     path('posts/create/', PostCreateView.as_view(), name='post_create'),
     path('posts/<int:post_id>/', PostDetailView.as_view(), name='post_detail'),
     path('vote/', VoteView.as_view(), name='vote'),
@@ -50,6 +51,7 @@ urlpatterns = [
 
     # ✅ 현재 로그인한 사용자 정보 조회
     path('user/', CurrentUserView.as_view(), name='current_user'),
-    path('myposts/', MyPostListView.as_view(), name='my_posts'),
+    path('posts/mine/', MyPostListView.as_view(), name='my_posts'), #사용자 작성 게시글 목록 
+    path('posts/mine/recent/', MyRecentPostsView.as_view(), name='my_recent_posts'), #사용자가 작성한 최근 4개 게시물물
     path('my-predictions/', MyPredictionListView.as_view(), name='my_predictions'),
 ]
