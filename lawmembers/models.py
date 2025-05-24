@@ -5,7 +5,7 @@ class Lawmaker(models.Model):
     party = models.CharField(max_length=100)
     representative_field = models.CharField(max_length=100)
     seat_number = models.IntegerField(unique=True)
-    photo = models.ImageField(upload_to='photos/', blank=True, null=True)
+    photo = models.URLField(blank=True, null=True)  # ✅ 수정: 외부 URL 저장 가능
 
     def __str__(self):
         return f"{self.seat_number}번 - {self.name}"

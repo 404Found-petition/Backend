@@ -683,8 +683,17 @@ class MyRecentPostsView(APIView):
 
 
 class MyPredictionListView(APIView):
+    permission_classes = [IsAuthenticated]  # ✅ 로그인 사용자만 접근 가능
+
     def get(self, request):
         user = request.user
         queryset = UserPrediction.objects.filter(user=user).order_by('-predicted_at')
         serializer = UserPredictionSerializer(queryset, many=True)
-        return Response(serializer.data)
+        return Response({
+            "success": True,
+            "message": "나의 청원 예측 기록 조회 성공",
+            "data": serializer.data
+        })
+
+
+#5.24 MyPredictionListView 수정 22:50 바꾼 채로 유지지

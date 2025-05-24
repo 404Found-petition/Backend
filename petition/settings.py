@@ -143,6 +143,11 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
@@ -167,7 +172,10 @@ SIMPLE_JWT = {
 AUTH_USER_MODEL = 'gov.CustomUser'
 
 # 모든 Origin 허용 (개발 중)
-CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_ALL_ORIGINS = [
+    "https://frontend-phi-ten-62.vercel.app",
+]
+
 
 # 운영 시에는 특정 Origin만 허용하도록 변경 권장
 # CORS_ALLOWED_ORIGINS = [
