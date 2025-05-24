@@ -172,11 +172,11 @@ SIMPLE_JWT = {
 AUTH_USER_MODEL = 'gov.CustomUser'
 
 # 모든 Origin 허용 (개발 중)
-CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOW_ALL_ORIGINS = True
 
 
 # 운영 시에는 특정 Origin만 허용하도록 변경 권장
-CORS_ALLOWED_ORIGINS = [
-    "https://frontend-phi-ten-62.vercel.app",
-    "https://lawgic.p-e.kr",
-]
+# CORS_ALLOWED_ORIGINS = [
+#     "https://frontend-phi-ten-62.vercel.app",
+#     "https://lawgic.p-e.kr",
+# ]
