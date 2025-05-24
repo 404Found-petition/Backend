@@ -29,18 +29,17 @@ from .models import UserPrediction
 from rest_framework.permissions import AllowAny
 
 
-# KoBERT 모델 초기화
-tokenizer = AutoTokenizer.from_pretrained("monologg/kobert", trust_remote_code=True)
-bert_model = AutoModel.from_pretrained("monologg/kobert", trust_remote_code=True)
-
 # BERT 임베딩 추출 함수
 def get_bert_embedding(text):
-    # 입력 텍스트를 BERT 모델에 입력하기 위한 텐서 형식으로 변환
+    from transformers import AutoTokenizer, AutoModel
+    import torch
+
+    tokenizer = AutoTokenizer.from_pretrained("monologg/kobert", trust_remote_code=True)
+    bert_model = AutoModel.from_pretrained("monologg/kobert", trust_remote_code=True)
+
     inputs = tokenizer(text, return_tensors="pt", truncation=True, padding="max_length", max_length=128)
-    # BERT 모델을 통해 임베딩을 추출
     with torch.no_grad():
         outputs = bert_model(**inputs)
-    # [CLS] 토큰의 임베딩을 가져오고, 이를 numpy 배열로 반환
     cls_embedding = outputs.last_hidden_state[:, 0, :].squeeze().numpy()
     return cls_embedding
 
