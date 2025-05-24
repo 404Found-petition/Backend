@@ -44,7 +44,7 @@ OPENCONGRESS_KEY = get_secret("OPENCONGRESS_KEY")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ["lawgic.p-e.kr"]
 
 
 # Application definition
