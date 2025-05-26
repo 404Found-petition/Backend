@@ -29,7 +29,7 @@ from django.contrib.auth import get_user_model
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from .models import UserPrediction
 from rest_framework.permissions import AllowAny
-from ai.bert import get_bert_embedding
+from ai.bert_utils import get_bert_embedding
 
 # ✅ KoBERT 모델과 토크나이저를 한 번만 로딩 (최초 다운로드 후 캐시 사용)
 tokenizer = AutoTokenizer.from_pretrained("monologg/kobert", trust_remote_code=True)
