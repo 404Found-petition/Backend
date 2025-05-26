@@ -28,15 +28,13 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from .models import UserPrediction
 from rest_framework.permissions import AllowAny
 
+# ✅ KoBERT 모델과 토크나이저를 한 번만 로딩 (최초 다운로드 후 캐시 사용)
+tokenizer = AutoTokenizer.from_pretrained("monologg/kobert", trust_remote_code=True)
+bert_model = AutoModel.from_pretrained("monologg/kobert", trust_remote_code=True)
+bert_model.eval()  # 추론 모드로 전환
 
 # BERT 임베딩 추출 함수
 def get_bert_embedding(text):
-    from transformers import AutoTokenizer, AutoModel
-    import torch
-
-    tokenizer = AutoTokenizer.from_pretrained("monologg/kobert", trust_remote_code=True)
-    bert_model = AutoModel.from_pretrained("monologg/kobert", trust_remote_code=True)
-
     inputs = tokenizer(text, return_tensors="pt", truncation=True, padding="max_length", max_length=128)
     with torch.no_grad():
         outputs = bert_model(**inputs)
