@@ -9,6 +9,8 @@ import os
 import pathlib
 import joblib
 import numpy as np
+import pickle
+import xgboost as xgb
 import torch
 from transformers import AutoTokenizer, AutoModel
 from .models import CustomUser, History, Post, Vote, Comment, Petition
@@ -27,6 +29,7 @@ from django.contrib.auth import get_user_model
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from .models import UserPrediction
 from rest_framework.permissions import AllowAny
+from ai.bert import get_bert_embedding
 
 # ✅ KoBERT 모델과 토크나이저를 한 번만 로딩 (최초 다운로드 후 캐시 사용)
 tokenizer = AutoTokenizer.from_pretrained("monologg/kobert", trust_remote_code=True)
@@ -224,7 +227,6 @@ class PostPaginationView(APIView):
 
 
 
-# 청원 예측을 수행하고 결과를 기록하는 API
 class PetitionPredictView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -236,15 +238,29 @@ class PetitionPredictView(APIView):
             return Response({"error": "청원 내용을 입력해주세요."}, status=400)
 
         try:
-            model = joblib.load(settings.BASE_DIR / 'ai' / '청원_예측모델.pkl')
-            scaler = joblib.load(settings.BASE_DIR / 'ai' / 'scaler.pkl')
+            # ✅ 모델 로드 (JSON)
+            model = xgb.Booster()
+            model.load_model(settings.BASE_DIR / 'ai' / '청원_예측모델.json')
 
-            embedding = get_bert_embedding(petition_text)
+            # ✅ 스케일러 로드 (pickle 그대로)
+            with open(settings.BASE_DIR / 'ai' / 'scaler.pkl', 'rb') as f:
+                scaler = pickle.load(f)
+
+            # ✅ 입력 텍스트 -> KoBERT 임베딩
+            embedding = get_bert_embedding(petition_text)  # (768,)
             is_law = 1 if "법안" in petition_text else 0
-            features = np.hstack((embedding, is_law)).reshape(1, -1)
+            features = np.hstack((embedding, is_law)).reshape(1, -1)  # (1, 769)
 
-            pred_scaled = model.predict(features)
-            pred_score = scaler.inverse_transform(pred_scaled.reshape(-1, 1))[0][0]
+            # ✅ DMatrix 변환 후 예측
+            dinput = xgb.DMatrix(features)
+            pred_scaled = model.predict(dinput)  # 정규화된 예측값
+            pred_score = scaler.inverse_transform(pred_scaled.reshape(-1, 1))[0][0]  # 역변환
+
+            return Response({
+                "user": user.name,
+                "petition_text": petition_text,
+                "prediction_percentage": round(pred_score, 2)
+            })
 
         except Exception as e:
             import traceback
