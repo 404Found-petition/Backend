@@ -238,24 +238,39 @@ class PetitionPredictView(APIView):
             return Response({"error": "청원 내용을 입력해주세요."}, status=400)
 
         try:
-            # ✅ 모델 로드 (JSON)
+            # ✅ 모델 로드
             model = xgb.Booster()
             model.load_model(settings.BASE_DIR / 'ai' / '청원_예측모델.json')
 
-            # ✅ 스케일러 로드 (pickle 그대로)
+            # ✅ 스케일러 로드
             with open(settings.BASE_DIR / 'ai' / 'scaler.pkl', 'rb') as f:
                 scaler = pickle.load(f)
 
-            # ✅ 입력 텍스트 -> KoBERT 임베딩
-            embedding = get_bert_embedding(petition_text)  # (768,)
+            # ✅ 임베딩
+            embedding = get_bert_embedding(petition_text)
             is_law = 1 if "법안" in petition_text else 0
-            features = np.hstack((embedding, is_law)).reshape(1, -1)  # (1, 769)
+            features = np.hstack((embedding, is_law)).reshape(1, -1)
 
-            # ✅ DMatrix 변환 후 예측
+            # ✅ 예측
             dinput = xgb.DMatrix(features)
-            pred_scaled = model.predict(dinput)  # 정규화된 예측값
-            pred_score = scaler.inverse_transform(pred_scaled.reshape(-1, 1))[0][0]  # 역변환
+            pred_scaled = model.predict(dinput)
+            pred_score = scaler.inverse_transform(pred_scaled.reshape(-1, 1))[0][0]
 
+            # ✅ 기록 저장 (이제 return 전에 실행됨)
+            History.objects.create(
+                user=user,
+                search_petition=petition_text,
+                search_petition_percentage=pred_score
+            )
+
+            UserPrediction.objects.create(
+                user=user,
+                petition_title=petition_text[:200],
+                petition_content=petition_text,
+                prediction_percentage=pred_score
+            )
+
+            # ✅ 마지막에만 return
             return Response({
                 "user": user.name,
                 "petition_text": petition_text,
@@ -267,27 +282,6 @@ class PetitionPredictView(APIView):
             print("❌ AI 예측 오류:", str(e))
             traceback.print_exc()
             return Response({"error": "AI 예측 중 오류 발생"}, status=500)
-
-        # ✅ 기존 History 저장
-        History.objects.create(
-            user=user,
-            search_petition=petition_text,
-            search_petition_percentage=pred_score
-        )
-
-        # ✅ 추가할 UserPrediction 저장
-        # 예측 결과가 나온 후 (예: result = 31.0)
-        UserPrediction.objects.create(
-            user=request.user,
-            petition_title=petition_text[:200],
-            petition_content=petition_text,
-            prediction_percentage=pred_score
-        )
-
-        return Response({
-            "success": True,
-            "predicted_percentage": round(pred_score, 2)
-        }, status=200)
 
 # 개인이 과거에 청원 예측 수행한 결과 기록 조회 API
 class MyHistoryView(APIView):
