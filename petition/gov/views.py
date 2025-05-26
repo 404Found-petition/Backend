@@ -238,8 +238,8 @@ class PetitionPredictView(APIView):
             return Response({"error": "청원 내용을 입력해주세요."}, status=400)
 
         try:
-            model = joblib.load(settings.BASE_DIR / 'AI' / '청원_예측모델.pkl')
-            scaler = joblib.load(settings.BASE_DIR / 'AI' / 'scaler.pkl')
+            model = joblib.load(settings.BASE_DIR / 'ai' / '청원_예측모델.pkl')
+            scaler = joblib.load(settings.BASE_DIR / 'ai' / 'scaler.pkl')
 
             embedding = get_bert_embedding(petition_text)
             is_law = 1 if "법안" in petition_text else 0
@@ -249,6 +249,9 @@ class PetitionPredictView(APIView):
             pred_score = scaler.inverse_transform(pred_scaled.reshape(-1, 1))[0][0]
 
         except Exception as e:
+            import traceback
+            print("❌ AI 예측 오류:", str(e))
+            traceback.print_exc()
             return Response({"error": "AI 예측 중 오류 발생"}, status=500)
 
         # ✅ 기존 History 저장
