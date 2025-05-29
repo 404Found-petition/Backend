@@ -24,6 +24,7 @@ from .views import (
     MyPredictionListView, # ✅ 추가
     RecentPostsAPIView,
     MyRecentPostsView,
+    LawmakerAPIProxyView,
 )
 
 urlpatterns = [
@@ -48,6 +49,7 @@ urlpatterns = [
     path("monthly-keywords/", MonthlyKeywordAPIView.as_view(), name="monthly-keywords"),
     path('social-login/google/', GoogleLoginView.as_view(), name='google_login'),
     path('posts/recent/', RecentPostsAPIView.as_view()),
+    path("api/lawmaker-info/", LawmakerAPIProxyView.as_view(), name="lawmaker-info"),
 
     # ✅ 현재 로그인한 사용자 정보 조회
     path('user/', CurrentUserView.as_view(), name='current_user'),

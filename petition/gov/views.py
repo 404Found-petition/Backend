@@ -477,17 +477,22 @@ class PostDetailView(APIView):
             no_votes = Vote.objects.filter(post=post, choice=False).count()
             vote_result = {"yes": yes_votes, "no": no_votes}
 
-            # ✅ 현재 계정 기준으로만 voted 여부 판단
+            # 현재 계정 기준으로 voted 여부와 선택값 판단
             has_voted = False
+            vote_option = None
             if request.user and request.user.is_authenticated:
-                has_voted = Vote.objects.filter(post=post, user=request.user).exists()
+                vote = Vote.objects.filter(post=post, user=request.user).first()
+                if vote:
+                    has_voted = True
+                    vote_option = "yes" if vote.choice else "no"
 
             return Response({
                 "success": True,
                 "post": post_data,
                 "comments": comment_data,
                 "vote_result": vote_result,
-                "has_voted": has_voted  # 🔥 이 값을 프론트에서 판단 기준으로 사용
+                "has_voted": has_voted,      
+                "vote_option": vote_option    
             })
 
         except Post.DoesNotExist:
@@ -495,6 +500,7 @@ class PostDetailView(APIView):
                 "success": False,
                 "message": "해당 게시글이 존재하지 않습니다."
             }, status=404)
+
 
 
 # 찬반 투표 API
@@ -704,6 +710,28 @@ class MyPredictionListView(APIView):
             "message": "나의 청원 예측 기록 조회 성공",
             "data": serializer.data
         })
+
+# 열린국회 API - 의원 인적사항 호출 뷰
+class LawmakerAPIProxyView(APIView):
+    def get(self, request):
+        try:
+            api_key = settings.OPENCONGRESS_KEY  # secrets.json에서 불러온 키
+            url = "https://open.assembly.go.kr/portal/openapi/nwvrqwxyaytdsfvhu"
+            params = {
+                "KEY": api_key,
+                "Type": "json",
+                "pIndex": 1,
+                "pSize": 1000
+            }
+            response = requests.get(url, params=params)
+            response.raise_for_status()
+
+            return Response(response.json(), status=200)
+
+        except Exception as e:
+            print("❌ API 호출 오류:", e)
+            return Response({"error": str(e)}, status=500)
+
 
 
 #5.24 MyPredictionListView 수정 22:50 바꾼 채로 유지지

@@ -79,5 +79,6 @@ def main():
     df.to_csv(CSV_PATH, index=False, encoding="utf-8-sig")
     print(f"✅ 저장 완료: {CSV_PATH}")
 
+# 외부에서 import해서 main()을 실행할 수 있도록
 if __name__ == "__main__":
     main()
