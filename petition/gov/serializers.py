@@ -79,10 +79,12 @@ class CommentSerializer(serializers.ModelSerializer):
 class PostSerializer(serializers.ModelSerializer):
     comments = serializers.SerializerMethodField()
     userid = serializers.SerializerMethodField()
+    has_vote = serializers.SerializerMethodField()
+
 
     class Meta:
         model = Post
-        fields = ['id', 'title', 'content', 'created_at', 'userid', 'comments', 'has_poll']
+        fields = ['id', 'title', 'content', 'created_at', 'userid', 'comments', 'has_vote']
 
     def get_userid(self, obj):
         uid = obj.user.userid  # 사용자 ID는 항상 존재함
@@ -92,6 +94,8 @@ class PostSerializer(serializers.ModelSerializer):
         comments = Comment.objects.filter(post=obj).order_by('-created_at')[:2]
         return CommentSerializer(comments, many=True).data
 
+    def get_has_vote(self, obj):
+        return obj.vote_set.exists()
 
 # -------------------- 청원 관련 --------------------
 class PetitionSerializer(serializers.ModelSerializer):
